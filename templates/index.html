@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aitu Passport 电子签章 Demo</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📝 Aitu Passport</h1>
+            <p>电子签章演示系统</p>
+        </div>
+        
+        <div class="content">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('upload')">📤 上传文件</button>
+                <button class="tab" onclick="switchTab('url')">🔗 文件URL</button>
+                <button class="tab" onclick="switchTab('info')">ℹ️ 使用说明</button>
+            </div>
+            
+            <!-- 上传文件标签页 -->
+            <div id="upload-tab" class="tab-content active">
+                <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+                    <div class="upload-icon">📁</div>
+                    <h3>点击或拖拽文件到此处</h3>
+                    <p>支持 PDF, XML 及其他文档格式</p>
+                </div>
+                <input type="file" id="fileInput" class="file-input" onchange="handleFileSelect(event)">
+                
+                <div id="selectedFile" class="selected-file">
+                    <strong>已选择文件：</strong> <span id="fileName"></span>
+                </div>
+                
+                <button class="btn" id="uploadBtn" onclick="uploadFile()" disabled>上传并签名</button>
+                
+                <div id="uploadResult" class="result"></div>
+                <div id="uploadLoading" class="loading">
+                    <div class="spinner"></div>
+                    <p>正在上传...</p>
+                </div>
+            </div>
+            
+            <!-- 文件URL标签页 -->
+            <div id="url-tab" class="tab-content">
+                <div class="url-input-group">
+                    <label for="urlInput">📎 输入文件URL地址</label>
+                    <input type="text" 
+                           id="urlInput" 
+                           class="url-input" 
+                           placeholder="https://example.com/document.pdf"
+                           oninput="validateUrl()">
+                </div>
+                
+                <div class="file-type-select">
+                    <label>文件类型：</label>
+                    <div class="radio-group">
+                        <label>
+                            <input type="radio" name="fileType" value="auto" checked>
+                            自动检测
+                        </label>
+                        <label>
+                            <input type="radio" name="fileType" value="pdf">
+                            PDF
+                        </label>
+                        <label>
+                            <input type="radio" name="fileType" value="general">
+                            普通文档
+                        </label>
+                    </div>
+                </div>
+                
+                <button class="btn" id="urlBtn" onclick="uploadByUrl()" disabled style="margin-top: 20px;">通过URL上传并签名</button>
+                
+                <div id="urlResult" class="result"></div>
+                <div id="urlLoading" class="loading">
+                    <div class="spinner"></div>
+                    <p>正在处理...</p>
+                </div>
+            </div>
+            
+            <!-- 使用说明标签页 -->
+            <div id="info-tab" class="tab-content">
+                <div class="info-section">
+                    <h3>📋 使用流程</h3>
+                    <ol>
+                        <li>选择上传方式（本地文件或URL）</li>
+                        <li>上传文档到 Aitu Passport</li>
+                        <li>点击生成的签名链接</li>
+                        <li>在 Aitu Passport 中完成签名</li>
+                        <li>签名完成后自动回调获取结果</li>
+                    </ol>
+                </div>
+                
+                <div class="info-section">
+                    <h3>🔌 API 端点</h3>
+                    <ul>
+                        <li><code>POST /upload</code> - 上传本地文档</li>
+                        <li><code>POST /upload-by-url</code> - 通过URL上传文档</li>
+                        <li><code>GET /sign?signable_id=xxx</code> - 发起签名流程</li>
+                        <li><code>GET /callback</code> - OAuth2 回调处理</li>
+                    </ul>
+                </div>
+                
+                <div class="info-section">
+                    <h3>💻 命令行示例</h3>
+                    <p><strong>上传本地文件：</strong></p>
+                    <code style="display: block; padding: 10px; margin-top: 10px;">
+                        curl -X POST -F "file=@document.pdf" http://localhost:8000/upload
+                    </code>
+                    
+                    <p style="margin-top: 15px;"><strong>通过URL上传：</strong></p>
+                    <code style="display: block; padding: 10px; margin-top: 10px;">
+                        curl -X POST -H "Content-Type: application/json" \<br>
+                        &nbsp;&nbsp;-d '{"url": "https://example.com/doc.pdf"}' \<br>
+                        &nbsp;&nbsp;http://localhost:8000/upload-by-url
+                    </code>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
