@@ -507,7 +507,7 @@ def upload_document():
             signable_id = client.upload_document(temp_path, file.filename)
 
         # 生成签名链接
-        sign_url = f"http://localhost:8000/sign?signable_id={signable_id}"
+        sign_url = f"https://anti.zoowayss.dpdns.org/sign?signable_id={signable_id}"
 
         return jsonify({
             "success": True,
@@ -562,7 +562,7 @@ def upload_document_by_url():
             signable_id = client.upload_document_by_url(file_url, file_name)
 
         # 生成签名链接
-        sign_url = f"http://localhost:8000/sign?signable_id={signable_id}"
+        sign_url = f"https://anti.zoowayss.dpdns.org/sign?signable_id={signable_id}"
 
         return jsonify({
             "success": True,
