@@ -35,7 +35,7 @@ class AituPassportConfig:
     client_secret: str = "RcQlEWe4gbikvyr684ZG3odqgo4lTqmDhlhtJRuJHYkokti4Cjhqr5lqLx3qTeSW"
 
     # 回调地址 (需要在Aitu Passport控制台配置)
-    redirect_uri: str = "http://localhost:8000/callback"
+    redirect_uri: str = "https://anti.zoowayss.dpdns.org/callback"
     
     # 是否启用详细的请求日志
     verbose: bool = True
