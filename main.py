@@ -438,7 +438,7 @@ class AituPassportClient:
         headers = {
             "Authorization": f"Bearer {access_token}"
         }
-
+        print(f'access_token: {access_token}')
         response = self._make_request("GET", url, headers=headers)
         response.raise_for_status()
 
@@ -683,7 +683,7 @@ def demo_sign_document(file_source: str):
     print(f"文档上传成功，signableId: {signable_id}")
 
     # 2. 生成授权链接
-    auth_url, state = client.generate_auth_url([signable_id],phone="7715251555",iin="990315312345")
+    auth_url, state = client.generate_auth_url([signable_id],phone="77715251555",iin="990315312345")
 
     print(f"\n请在浏览器中打开以下链接进行签名:")
     print(auth_url)
