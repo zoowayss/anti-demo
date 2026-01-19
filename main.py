@@ -246,7 +246,7 @@ class AituPassportClient:
 
     def upload_document_by_url(self, file_url: str, file_name: Optional[str] = None) -> str:
         """
-        通过URL上传文档用于签名
+        通过URL上传文档用于签名（先下载文件，再上传）
 
         Args:
             file_url: 文件URL (必须是https，或http://localhost)
@@ -258,9 +258,16 @@ class AituPassportClient:
         if file_name is None:
             file_name = file_url.split("/")[-1].split("?")[0]
 
+        # 从URL下载文件
+        download_response = requests.get(file_url, timeout=30)
+        download_response.raise_for_status()
+        
+        # 转换为base64
+        file_bytes = base64.b64encode(download_response.content).decode("utf-8")
+
         url = f"{self.config.base_url}/api/v2/oauth/signable"
         payload = {
-            "link": file_url,
+            "bytes": file_bytes,  # API要求bytes字段必须存在
             "name": file_name
         }
 
@@ -276,7 +283,8 @@ class AituPassportClient:
 
     def upload_pdf_by_url(self, file_url: str, file_name: Optional[str] = None) -> str:
         """
-        通过URL上传PDF文档用于签名 (签名将嵌入PDF文件)
+        通过URL上传PDF文档用于签名（先下载文件，再上传）
+        签名将嵌入PDF文件
 
         Args:
             file_url: PDF文件URL (必须是https，或http://localhost)
@@ -290,9 +298,16 @@ class AituPassportClient:
             if not file_name.lower().endswith(".pdf"):
                 file_name = "document.pdf"
 
+        # 从URL下载PDF文件
+        download_response = requests.get(file_url, timeout=30)
+        download_response.raise_for_status()
+        
+        # 转换为base64
+        file_bytes = base64.b64encode(download_response.content).decode("utf-8")
+
         url = f"{self.config.base_url}/api/v2/oauth/signable/pdf"
         payload = {
-            "link": file_url,
+            "bytes": file_bytes,  # API要求bytes字段必须存在
             "name": file_name
         }
 
@@ -444,6 +459,7 @@ class AituPassportClient:
 
         return response.json()
 
+
     def get_signed_pdf(self, access_token: str, signable_id: str) -> bytes:
         """
         获取签名后的PDF文件
@@ -465,6 +481,53 @@ class AituPassportClient:
         response.raise_for_status()
 
         return response.content
+
+    def get_signed_pdfs(self, access_token: str) -> list[dict]:
+        """
+        获取所有签名后的PDF文件列表
+
+        Args:
+            access_token: 访问令牌
+
+        Returns:
+            签名PDF列表，每个包含signableId, name, signedPdf等字段
+        """
+        url = f"{self.config.base_url}/api/v2/oauth/signatures/pdf"
+
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+
+        response = self._make_request("GET", url, headers=headers)
+        response.raise_for_status()
+
+        return response.json()
+
+    def verify_signed_pdf(self, signed_pdf_bytes: str) -> dict:
+        """
+        验证签名后的PDF文件
+
+        Args:
+            signed_pdf_bytes: 签名后的PDF文件的base64编码字符串
+
+        Returns:
+            验证结果，包含valid, signatureDetails, signers等字段
+        """
+        url = f"{self.config.base_url}/api/v2/oauth/signatures/pdf/verify"
+
+        payload = {
+            "bytes": signed_pdf_bytes
+        }
+
+        response = self._make_request(
+            "POST",
+            url,
+            json=payload,
+            auth=self._get_basic_auth()
+        )
+        response.raise_for_status()
+
+        return response.json()
 
 
 # 全局客户端实例
@@ -634,13 +697,29 @@ def oauth_callback():
         token_response = client.exchange_code_for_token(code)
         access_token = token_response.get("access_token")
 
-        # 获取签名结果
-        signatures = client.get_signatures(access_token)
+        # 获取签名后的PDF文件列表
+        signed_pdfs = client.get_signed_pdfs(access_token)
+
+        # 验证每个签名后的PDF
+        verification_results = []
+        for signed_pdf in signed_pdfs:
+            signable_id = signed_pdf.get("signableId")
+            signed_pdf_bytes = signed_pdf.get("signedPdf")  # base64编码的PDF
+            
+            # 验证签名
+            verify_result = client.verify_signed_pdf(signed_pdf_bytes)
+            
+            verification_results.append({
+                "signableId": signable_id,
+                "name": signed_pdf.get("name"),
+                "verification": verify_result,
+                "signedPdf": signed_pdf_bytes  # 包含签名后的PDF数据
+            })
 
         return jsonify({
             "success": True,
-            "message": "签名成功",
-            "signatures": signatures,
+            "message": "签名成功并已验证",
+            "results": verification_results,
             "signable_ids": state_data["signable_ids"]
         })
     except requests.RequestException as e:
