@@ -1,3 +1,4 @@
 venv/
 passport-external.openapi.yaml
 test.pdf
+static/signed/

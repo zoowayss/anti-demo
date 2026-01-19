@@ -63,7 +63,7 @@ async function uploadFile() {
     hideResult('upload');
     
     try {
-        const response = await fetch('/upload', {
+        const response = await fetch('/upload-pdf', {
             method: 'POST',
             body: formData
         });

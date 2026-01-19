@@ -1,15 +1,15 @@
 """
-Aitu Passport 电子签章 Demo
+Aitu Passport PDF 电子签章 Demo
 =============================
 
-本demo演示如何使用Aitu Passport API实现电子签章功能。
+本demo演示如何使用Aitu Passport API实现PDF电子签章功能。
 
 流程:
-1. 上传文档到Aitu Passport获取signableId
+1. 上传PDF文档到Aitu Passport获取signableId
 2. 生成OAuth2授权链接，用户点击后跳转到Aitu Passport进行签名
 3. 用户签名完成后回调，获取授权码
 4. 用授权码换取access_token
-5. 使用token获取签名结果
+5. 使用token获取签名后的PDF并验证
 """
 
 import base64
@@ -60,7 +60,7 @@ pending_states: dict[str, dict] = {}
 # ==================== API客户端 ====================
 
 class AituPassportClient:
-    """Aitu Passport API 客户端"""
+    """Aitu Passport API 客户端 - 仅支持PDF"""
 
     def __init__(self, cfg: AituPassportConfig):
         self.config = cfg
@@ -102,7 +102,6 @@ class AituPassportClient:
                 if isinstance(auth, tuple) and len(auth) == 2:
                     print(f"Auth: Basic Auth")
                     print(f"Client ID: {auth[0]}")
-                    # print(f"Client Secret: {'*' * 8}...{auth[1][-4:] if len(auth[1]) > 4 else '****'}")
                     print(f"Client Secret: {auth[1]}")
             
             if 'headers' in kwargs and 'Authorization' in kwargs['headers']:
@@ -120,13 +119,6 @@ class AituPassportClient:
                     print(f"Request Body: {{")
                     print(f"  'name': '{payload.get('name', 'N/A')}'")
                     print(f"  'bytes': '<base64 data, {len(payload['bytes'])} chars>'")
-                    if 'link' in payload:
-                        print(f"  'link': '{payload['link']}'")
-                    print(f"}}")
-                elif 'link' in payload:
-                    print(f"Request Body: {{")
-                    print(f"  'name': '{payload.get('name', 'N/A')}'")
-                    print(f"  'link': '{payload['link']}'")
                     print(f"}}")
                 else:
                     print(f"Request Body: {payload}")
@@ -176,41 +168,6 @@ class AituPassportClient:
         
         return response
 
-    def upload_document(self, file_path: str, file_name: Optional[str] = None) -> str:
-        """
-        上传文档用于签名
-
-        Args:
-            file_path: 文件路径
-            file_name: 文件名 (可选，默认使用file_path的文件名)
-
-        Returns:
-            signableId: 文档ID，用于后续签名流程
-        """
-        if file_name is None:
-            file_name = file_path.split("/")[-1]
-
-        # 读取文件并转为base64
-        with open(file_path, "rb") as f:
-            file_bytes = base64.b64encode(f.read()).decode("utf-8")
-
-        url = f"{self.config.base_url}/api/v2/oauth/signable"
-        payload = {
-            "bytes": file_bytes,
-            "name": file_name
-        }
-
-        response = self._make_request(
-            "POST",
-            url,
-            json=payload,
-            auth=self._get_basic_auth()
-        )
-        response.raise_for_status()
-
-        result = response.json()
-        return result["signableId"]
-
     def upload_pdf_document(self, file_path: str, file_name: Optional[str] = None) -> str:
         """
         上传PDF文档用于签名 (签名将嵌入PDF文件)
@@ -231,43 +188,6 @@ class AituPassportClient:
         url = f"{self.config.base_url}/api/v2/oauth/signable/pdf"
         payload = {
             "bytes": file_bytes,
-            "name": file_name
-        }
-
-        response = self._make_request(
-            "POST",
-            url,
-            json=payload,
-            auth=self._get_basic_auth()
-        )
-        response.raise_for_status()
-
-        return response.json()["signableId"]
-
-    def upload_document_by_url(self, file_url: str, file_name: Optional[str] = None) -> str:
-        """
-        通过URL上传文档用于签名（先下载文件，再上传）
-
-        Args:
-            file_url: 文件URL (必须是https，或http://localhost)
-            file_name: 文件名 (可选，默认从URL提取)
-
-        Returns:
-            signableId: 文档ID
-        """
-        if file_name is None:
-            file_name = file_url.split("/")[-1].split("?")[0]
-
-        # 从URL下载文件
-        download_response = requests.get(file_url, timeout=30)
-        download_response.raise_for_status()
-        
-        # 转换为base64
-        file_bytes = base64.b64encode(download_response.content).decode("utf-8")
-
-        url = f"{self.config.base_url}/api/v2/oauth/signable"
-        payload = {
-            "bytes": file_bytes,  # API要求bytes字段必须存在
             "name": file_name
         }
 
@@ -321,39 +241,6 @@ class AituPassportClient:
 
         return response.json()["signableId"]
 
-    def upload_xml_document(self, file_path: str, file_name: Optional[str] = None) -> str:
-        """
-        上传XML文档用于签名 (签名将嵌入XML文件)
-
-        Args:
-            file_path: XML文件路径
-            file_name: 文件名 (可选)
-
-        Returns:
-            signableId: 文档ID
-        """
-        if file_name is None:
-            file_name = file_path.split("/")[-1]
-
-        with open(file_path, "rb") as f:
-            file_bytes = base64.b64encode(f.read()).decode("utf-8")
-
-        url = f"{self.config.base_url}/api/v2/oauth/signable/xml"
-        payload = {
-            "bytes": file_bytes,
-            "name": file_name
-        }
-
-        response = self._make_request(
-            "POST",
-            url,
-            json=payload,
-            auth=self._get_basic_auth()
-        )
-        response.raise_for_status()
-
-        return response.json()["signableId"]
-
     def generate_auth_url(
         self,
         signable_ids: list[str],
@@ -367,7 +254,7 @@ class AituPassportClient:
         生成OAuth2授权链接
 
         Args:
-            signable_ids: 要签名的文档ID列表
+            signable_ids: 要签名的PDF文档ID列表
             state: 状态参数 (可选，默认自动生成)
             scopes: 额外的scope (可选)
             phone: 预填手机号 (可选)
@@ -438,50 +325,6 @@ class AituPassportClient:
 
         return response.json()
 
-    def get_signatures(self, access_token: str) -> list[dict]:
-        """
-        获取签名结果
-
-        Args:
-            access_token: 访问令牌
-
-        Returns:
-            签名列表，每个包含signableId和signature
-        """
-        url = f"{self.config.base_url}/api/v2/oauth/signatures"
-
-        headers = {
-            "Authorization": f"Bearer {access_token}"
-        }
-        print(f'access_token: {access_token}')
-        response = self._make_request("GET", url, headers=headers)
-        response.raise_for_status()
-
-        return response.json()
-
-
-    def get_signed_pdf(self, access_token: str, signable_id: str) -> bytes:
-        """
-        获取签名后的PDF文件
-
-        Args:
-            access_token: 访问令牌
-            signable_id: 文档ID
-
-        Returns:
-            签名后的PDF二进制数据
-        """
-        url = f"{self.config.base_url}/api/v2/oauth/signable/pdf/{signable_id}"
-
-        headers = {
-            "Authorization": f"Bearer {access_token}"
-        }
-
-        response = self._make_request("GET", url, headers=headers)
-        response.raise_for_status()
-
-        return response.content
-
     def get_signed_pdfs(self, access_token: str) -> list[dict]:
         """
         获取所有签名后的PDF文件列表
@@ -542,15 +385,19 @@ def index():
     return render_template('index.html')
 
 
-@app.route("/upload", methods=["POST"])
-def upload_document():
-    """上传文档"""
+@app.route("/upload-pdf", methods=["POST"])
+def upload_pdf():
+    """上传PDF文档"""
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
 
     file = request.files["file"]
     if file.filename == "":
         return jsonify({"error": "No file selected"}), 400
+
+    # 检查是否为PDF文件
+    if not file.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "Only PDF files are supported"}), 400
 
     # 保存临时文件
     import tempfile
@@ -561,13 +408,8 @@ def upload_document():
     file.save(temp_path)
 
     try:
-        # 根据文件类型选择上传方式
-        if file.filename.lower().endswith(".pdf"):
-            signable_id = client.upload_pdf_document(temp_path, file.filename)
-        elif file.filename.lower().endswith(".xml"):
-            signable_id = client.upload_xml_document(temp_path, file.filename)
-        else:
-            signable_id = client.upload_document(temp_path, file.filename)
+        # 上传PDF
+        signable_id = client.upload_pdf_document(temp_path, file.filename)
 
         # 生成签名链接
         sign_url = f"https://anti.zoowayss.dpdns.org/sign?signable_id={signable_id}"
@@ -576,7 +418,7 @@ def upload_document():
             "success": True,
             "signable_id": signable_id,
             "sign_url": sign_url,
-            "message": f"文档上传成功，请访问 sign_url 发起签名"
+            "message": f"PDF上传成功，请访问 sign_url 发起签名"
         })
     except requests.RequestException as e:
         # 处理 HTTP 错误
@@ -603,9 +445,9 @@ def upload_document():
             os.remove(temp_path)
 
 
-@app.route("/upload-by-url", methods=["POST"])
-def upload_document_by_url():
-    """通过URL上传文档"""
+@app.route("/upload-pdf-by-url", methods=["POST"])
+def upload_pdf_by_url():
+    """通过URL上传PDF文档"""
     data = request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
@@ -615,14 +457,9 @@ def upload_document_by_url():
         return jsonify({"error": "url is required"}), 400
 
     file_name = data.get("name")
-    file_type = data.get("type")  # 可选: "pdf", "xml", "general"
 
     try:
-        # 根据文件类型或URL扩展名选择上传方式
-        if file_type == "pdf" or (not file_type and file_url.lower().split("?")[0].endswith(".pdf")):
-            signable_id = client.upload_pdf_by_url(file_url, file_name)
-        else:
-            signable_id = client.upload_document_by_url(file_url, file_name)
+        signable_id = client.upload_pdf_by_url(file_url, file_name)
 
         # 生成签名链接
         sign_url = f"https://anti.zoowayss.dpdns.org/sign?signable_id={signable_id}"
@@ -631,7 +468,7 @@ def upload_document_by_url():
             "success": True,
             "signable_id": signable_id,
             "sign_url": sign_url,
-            "message": "文档上传成功，请访问 sign_url 发起签名"
+            "message": "PDF上传成功，请访问 sign_url 发起签名"
         })
     except requests.RequestException as e:
         return jsonify({
@@ -642,19 +479,21 @@ def upload_document_by_url():
 
 @app.route("/sign")
 def initiate_signing():
-    """发起签名流程"""
+    """发起PDF签名流程"""
     signable_id = request.args.get("signable_id")
     if not signable_id:
         return jsonify({"error": "signable_id is required"}), 400
 
-    # 支持多个文档签名，用逗号分隔
+    # 支持多个PDF签名，用逗号分隔
     signable_ids = signable_id.split(",")
 
     # 生成授权链接
     auth_url, state = client.generate_auth_url(
         signable_ids=signable_ids,
         scopes=["phone", "first_name", "last_name"],  # 可选：获取用户信息
-        locale="ru"
+        locale="ru",
+        phone="77715251555",
+        iin="990315312345"
     )
 
     # 保存state用于验证回调
@@ -700,20 +539,53 @@ def oauth_callback():
         # 获取签名后的PDF文件列表
         signed_pdfs = client.get_signed_pdfs(access_token)
 
+        # 确保保存目录存在
+        import os
+        from datetime import datetime
+        signed_dir = os.path.join(os.path.dirname(__file__), "static", "signed")
+        os.makedirs(signed_dir, exist_ok=True)
+
         # 验证每个签名后的PDF
         verification_results = []
         for signed_pdf in signed_pdfs:
             signable_id = signed_pdf.get("signableId")
             signed_pdf_bytes = signed_pdf.get("signedPdf")  # base64编码的PDF
+            original_name = signed_pdf.get("name")
             
             # 验证签名
             verify_result = client.verify_signed_pdf(signed_pdf_bytes)
             
+            # 提取签名者信息（只返回关键字段）
+            signers_info = []
+            for signer in verify_result.get("signers", []):
+                signers_info.append({
+                    "firstName": signer.get("firstName"),
+                    "lastName": signer.get("lastName"),
+                    "middleName": signer.get("middleName"),
+                    "iin": signer.get("iin")
+                })
+            
+            # 保存签名后的PDF文件
+            # 生成唯一文件名：时间戳_signableId_原文件名
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_filename = f"{timestamp}_{signable_id}_{original_name}"
+            file_path = os.path.join(signed_dir, safe_filename)
+            
+            # 将base64解码并保存
+            pdf_content = base64.b64decode(signed_pdf_bytes)
+            with open(file_path, "wb") as f:
+                f.write(pdf_content)
+            
+            # 生成下载链接
+            download_url = f"https://anti.zoowayss.dpdns.org/static/signed/{safe_filename}"
+            
             verification_results.append({
                 "signableId": signable_id,
-                "name": signed_pdf.get("name"),
-                "verification": verify_result,
-                "signedPdf": signed_pdf_bytes  # 包含签名后的PDF数据
+                "name": original_name,
+                "valid": verify_result.get("valid"),
+                "signers": signers_info,
+                "downloadUrl": download_url,
+                "savedPath": file_path
             })
 
         return jsonify({
@@ -731,38 +603,31 @@ def oauth_callback():
 
 # ==================== 命令行使用示例 ====================
 
-def is_url(source: str) -> bool:
-    """判断输入是否为URL"""
-    return source.startswith("http://") or source.startswith("https://")
-
-
-def demo_sign_document(file_source: str):
+def demo_sign_pdf(file_source: str):
     """
-    命令行签名文档示例
+    命令行签名PDF示例
 
     Args:
-        file_source: 要签名的文件路径或URL
+        file_source: 要签名的PDF文件路径或URL
     """
-    print(f"正在上传文档: {file_source}")
+    print(f"正在上传PDF: {file_source}")
 
-    # 1. 上传文档
-    if is_url(file_source):
+    # 1. 上传PDF
+    if file_source.startswith("http://") or file_source.startswith("https://"):
         # URL模式
-        if file_source.lower().endswith(".pdf") or ".pdf?" in file_source.lower():
-            signable_id = client.upload_pdf_by_url(file_source)
-        else:
-            signable_id = client.upload_document_by_url(file_source)
+        signable_id = client.upload_pdf_by_url(file_source)
     else:
         # 本地文件模式
-        if file_source.lower().endswith(".pdf"):
-            signable_id = client.upload_pdf_document(file_source)
-        else:
-            signable_id = client.upload_document(file_source)
+        signable_id = client.upload_pdf_document(file_source)
 
-    print(f"文档上传成功，signableId: {signable_id}")
+    print(f"PDF上传成功，signableId: {signable_id}")
 
     # 2. 生成授权链接
-    auth_url, state = client.generate_auth_url([signable_id],phone="77715251555",iin="990315312345")
+    auth_url, state = client.generate_auth_url(
+        [signable_id],
+        phone="77715251555",
+        iin="990315312345"
+    )
 
     print(f"\n请在浏览器中打开以下链接进行签名:")
     print(auth_url)
@@ -775,13 +640,13 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) > 1:
-        # 命令行模式：签名指定文件或URL
+        # 命令行模式：签名指定PDF文件或URL
         file_source = sys.argv[1]
-        demo_sign_document(file_source)
+        demo_sign_pdf(file_source)
     else:
         # Web服务模式
         print("=" * 50)
-        print("Aitu Passport 电子签章 Demo")
+        print("Aitu Passport PDF 电子签章 Demo")
         print("=" * 50)
         print(f"\n环境: {config.environment}")
         print(f"Base URL: {config.base_url}")
