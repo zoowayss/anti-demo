@@ -13,6 +13,8 @@ Aitu Passport PDF 电子签章 Demo
 """
 
 import base64
+import json
+import os
 import secrets
 import urllib.parse
 from typing import Optional
@@ -123,8 +125,15 @@ class AituPassportClient:
                 else:
                     print(f"Request Body: {payload}")
             elif 'data' in kwargs:
-                print(f"Content-Type: application/x-www-form-urlencoded")
-                print(f"Request Body: {kwargs['data']}")
+                headers = kwargs.get('headers', {})
+                content_type = headers.get('Content-Type', 'application/x-www-form-urlencoded')
+                print(f"Content-Type: {content_type}")
+                data = kwargs['data']
+                if content_type == "application/json" and not isinstance(data, (bytes, str, bytearray)):
+                    content_len = headers.get("Content-Length", "unknown")
+                    print(f"Request Body: <流式JSON, Content-Length: {content_len}>")
+                else:
+                    print(f"Request Body: {data}")
         
         # 发送请求
         response = self.session.request(method, url, **kwargs)
@@ -182,24 +191,9 @@ class AituPassportClient:
         if file_name is None:
             file_name = file_path.split("/")[-1]
 
+        file_size = os.path.getsize(file_path)
         with open(file_path, "rb") as f:
-            file_bytes = base64.b64encode(f.read()).decode("utf-8")
-
-        url = f"{self.config.base_url}/api/v2/oauth/signable/pdf"
-        payload = {
-            "bytes": file_bytes,
-            "name": file_name
-        }
-
-        response = self._make_request(
-            "POST",
-            url,
-            json=payload,
-            auth=self._get_basic_auth()
-        )
-        response.raise_for_status()
-
-        return response.json()["signableId"]
+            return self._upload_pdf_stream(f, file_name, file_size)
 
     def upload_pdf_by_url(self, file_url: str, file_name: Optional[str] = None) -> str:
         """
@@ -218,27 +212,66 @@ class AituPassportClient:
             if not file_name.lower().endswith(".pdf"):
                 file_name = "document.pdf"
 
-        # 从URL下载PDF文件
-        download_response = requests.get(file_url, timeout=30)
-        download_response.raise_for_status()
-        
-        # 转换为base64
-        file_bytes = base64.b64encode(download_response.content).decode("utf-8")
+        # 从URL流式下载PDF文件
+        with requests.get(file_url, stream=True, timeout=30) as download_response:
+            download_response.raise_for_status()
+            download_response.raw.decode_content = True
+            content_length = download_response.headers.get("Content-Length")
+            file_size = int(content_length) if content_length and content_length.isdigit() else None
+            return self._upload_pdf_stream(download_response.raw, file_name, file_size)
 
+    def _iter_base64_stream(self, stream, chunk_size: int = 8192):
+        """按块进行Base64编码，避免整文件入内存"""
+        pending = b""
+        while True:
+            chunk = stream.read(chunk_size)
+            if not chunk:
+                break
+            if pending:
+                chunk = pending + chunk
+            # 只编码3的倍数，避免中间填充
+            encode_len = (len(chunk) // 3) * 3
+            if encode_len:
+                yield base64.b64encode(chunk[:encode_len])
+                pending = chunk[encode_len:]
+            else:
+                pending = chunk
+        if pending:
+            yield base64.b64encode(pending)
+
+    def _build_streaming_payload(self, stream, file_name: str, file_size: Optional[int]):
+        prefix = '{"bytes":"'
+        suffix = '","name":' + json.dumps(file_name, ensure_ascii=True) + '}'
+        prefix_bytes = prefix.encode("utf-8")
+        suffix_bytes = suffix.encode("utf-8")
+
+        def gen():
+            yield prefix_bytes
+            for part in self._iter_base64_stream(stream):
+                yield part
+            yield suffix_bytes
+
+        content_length = None
+        if file_size is not None:
+            base64_len = 4 * ((file_size + 2) // 3)
+            content_length = len(prefix_bytes) + base64_len + len(suffix_bytes)
+        return gen(), content_length
+
+    def _upload_pdf_stream(self, stream, file_name: str, file_size: Optional[int]) -> str:
         url = f"{self.config.base_url}/api/v2/oauth/signable/pdf"
-        payload = {
-            "bytes": file_bytes,  # API要求bytes字段必须存在
-            "name": file_name
-        }
+        data, content_length = self._build_streaming_payload(stream, file_name, file_size)
+        headers = {"Content-Type": "application/json"}
+        if content_length is not None:
+            headers["Content-Length"] = str(content_length)
 
         response = self._make_request(
             "POST",
             url,
-            json=payload,
+            data=data,
+            headers=headers,
             auth=self._get_basic_auth()
         )
         response.raise_for_status()
-
         return response.json()["signableId"]
 
     def generate_auth_url(
