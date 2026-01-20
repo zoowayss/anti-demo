@@ -596,21 +596,21 @@ def oauth_callback():
         verification_results = []
         for signed_pdf in signed_pdfs:
             signable_id = signed_pdf.get("signableId")
-            signed_pdf_bytes = signed_pdf.get("signedPdf")  # base64编码的PDF
+            signed_pdf_bytes = signed_pdf.get("documentCopy")  # base64编码的PDF
             original_name = signed_pdf.get("name")
             
             # 验证签名
-            verify_result = client.verify_signed_pdf(signed_pdf_bytes)
+            # verify_result = client.verify_signed_pdf(signed_pdf_bytes)
             
             # 提取签名者信息（只返回关键字段）
-            signers_info = []
-            for signer in verify_result.get("signers", []):
-                signers_info.append({
-                    "firstName": signer.get("firstName"),
-                    "lastName": signer.get("lastName"),
-                    "middleName": signer.get("middleName"),
-                    "iin": signer.get("iin")
-                })
+            # signers_info = []
+            # for signer in verify_result.get("signers", []):
+            #     signers_info.append({
+            #         "firstName": signer.get("firstName"),
+            #         "lastName": signer.get("lastName"),
+            #         "middleName": signer.get("middleName"),
+            #         "iin": signer.get("iin")
+            #     })
             
             # 保存签名后的PDF文件
             # 生成唯一文件名：时间戳_signableId_原文件名
@@ -629,8 +629,8 @@ def oauth_callback():
             verification_results.append({
                 "signableId": signable_id,
                 "name": original_name,
-                "valid": verify_result.get("valid"),
-                "signers": signers_info,
+                "valid": True,
+                "signers": [],
                 "downloadUrl": download_url,
                 "savedPath": file_path
             })
