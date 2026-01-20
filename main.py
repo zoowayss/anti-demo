@@ -257,12 +257,26 @@ class AituPassportClient:
             content_length = len(prefix_bytes) + base64_len + len(suffix_bytes)
         return gen(), content_length
 
+    class _StreamingBody:
+        """携带长度的迭代器，避免 requests 走 chunked 导致 400"""
+
+        def __init__(self, iterable, length: int):
+            self._iterable = iterable
+            self._length = length
+
+        def __iter__(self):
+            return iter(self._iterable)
+
+        def __len__(self):
+            return self._length
+
     def _upload_pdf_stream(self, stream, file_name: str, file_size: Optional[int]) -> str:
         url = f"{self.config.base_url}/api/v2/oauth/signable/pdf"
         data, content_length = self._build_streaming_payload(stream, file_name, file_size)
         headers = {"Content-Type": "application/json"}
         if content_length is not None:
             headers["Content-Length"] = str(content_length)
+            data = self._StreamingBody(data, content_length)
 
         response = self._make_request(
             "POST",
